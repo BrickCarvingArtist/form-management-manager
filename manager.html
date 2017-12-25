@@ -1,0 +1,439 @@
+<html>
+	<head>
+		<style>
+			.branch-creator *{
+				font-family: "PingFangSC-Regular", "Open Sans", arial, x-locale-body, sans-serif;
+			}
+			.branch-creator{
+				position: relative;
+				width: 200px;
+			}
+			.branch-creator.hidden{
+				display: none;
+			}
+			.branch-creator > header{
+				font-weight: 700;
+			}
+			.branch-creator a{
+				float: left;
+				display: flex;
+				justify-content: space-between;
+				width: 100%;
+				line-height: 2;
+			}
+			.branch-creator a > *{
+				cursor: pointer;
+			}
+			.branch-creator a i{
+				opacity: 0;
+			}
+			.branch-creator a:hover i{
+				opacity: 1;
+			}
+			.branch-creator header::selection, .branch-creator a::selection{
+				background-color: transparent;
+			}
+			.branch-creator > input{
+				float: left;
+				width: 100%;
+			}
+			.branch-creator .branch-creator{
+				position: absolute;
+				left: 100%;
+			}
+			.branch-creator form{
+				position: relative;
+				width: 600px;
+				overflow: hidden;
+			}
+			.branch-creator form.hidden{
+				display: none;
+			}
+			.branch-creator form header{
+				font-weight: 700;
+				line-height: 2;
+			}
+		</style>
+	</head>
+	<body>
+		<button type="button" id="btnExport">导出</button>
+		<script>
+			const FormManagementManager = function FormManagementManager(){
+				const ce = document.createElement.bind(document);
+				const id = (a => _ => a++)(0);
+				const CHINESE_NUMBER = ["一", "二", "三", "四"];
+				class Node{
+					constructor(element){
+						this._element = element;
+					}
+				}
+				class LinkedList{
+					constructor(){
+						this.length = 0;
+					}
+					push(element){
+						const node = new Node(element);
+						if(this._head){
+							let current = this._head;
+							while(current._next){
+								current = current._next;
+							}
+							current._next = node;
+						}else{
+							this._head = node;
+						}
+						this.length++;
+					}
+					remove(element){
+						let previous,
+							current = this._head;
+						while(current && current._element !== element){
+							previous = current;
+							current = current._next;
+						}
+						if(!current){
+							return;
+						}
+						if(previous){
+							previous._next = current._next;
+						}else{
+							this._head = current._next;
+						}
+						if(current._next){
+							current._next._previous = previous;
+						}
+						this.length--;
+					}
+					size(){
+						return this.length;
+					}
+					map(iteratee){
+						let current = {
+							_next: this._head
+						},
+							pointer = 0;
+						const result = [];
+						while(current = current._next){
+							result.push(iteratee(current._element, pointer++, result));
+						}
+						return result;
+					}
+				}
+				class Branch{
+					constructor({trunk, name, depth = 0}){
+						this._id = id();
+						this._branches = new LinkedList;
+						this._trunk = trunk;
+						this._name = name;
+						this._depth = depth;
+						this._leaves = [];
+					}
+					_createBranch(options){
+						const branch = new this.constructor({
+							truck: this,
+							depth: this._depth + 1,
+							...options
+						});
+						this._branches.push(branch);
+						return branch;
+					}
+					_createLeaf(leaf){
+						const _leaf =  Object.assign(leaf, {
+							branch: this,
+							depth: this._depth + 1
+						});
+						this._leaves.push(_leaf);
+						return _leaf;
+					}
+					_setTrunk(trunk){
+						this._trunk = trunk;
+					}
+					toJSON(){
+						return {
+							name: this._name,
+							branches: this._branches.map(branch => branch.toJSON()),
+							leaves: this._leaves.map(leaf => leaf.toJSON())
+						};
+					}
+				}
+				class MenuCreator extends Branch{
+					constructor({
+						container,
+						...options
+					}){
+						super(options);
+						this._leaves = new Proxy(this._leaves, {
+							set: (target, key, value) => {
+								this._header.textContent = `${this._name}(含表单)`;
+								target[key] = value;
+								return true;
+							}
+						});
+						this._renderIn(container);
+					}
+					_renderIn(container){
+						const element = this._element = ce("div");
+						element.className = "branch-creator";
+						element.appendChild(this._createHeader());
+						element.appendChild(this._createBranchInput());
+						element.appendChild(this._createFormInput());
+						container.appendChild(element);
+					}
+					_createHeader(){
+						const header = this._header = ce("header");
+						header.textContent = this._name;
+						header.addEventListener("click", _ => {
+							this._hide(this._current);
+							this._leaves.forEach(leaf => leaf._toggleHidden());
+						});
+						return header;
+					}
+					_createBranchInput(){
+						const input = this._input = ce("input");
+						input.placeholder = `添加${CHINESE_NUMBER[this._depth]}级菜单`;
+						input.addEventListener("keyup", ({keyCode}) => {
+							if(input.value && keyCode === 13){
+								this._hideForms();
+								this._createBranch({
+									name: input.value,
+									container: this._element
+								});
+								input.value = "";
+							}
+						});
+						return input;
+					}
+					_createBranch(options){
+						const previous = this._current;
+						this._createView(this._current = super._createBranch(options));
+						this._hide(previous);
+					}
+					_createView(branch){
+						const view = ce("a");
+						view.textContent = branch._name;
+						view.addEventListener("click", _ => {
+							if(this._current !== branch){
+								this._hide(this._current);
+								this._current = branch;
+							}
+							branch._toggleHidden();
+							this._hideForms();
+						});
+						const remove = ce("i");
+						remove.textContent = "x";
+						remove.addEventListener("click", e => {
+							e.stopPropagation();
+							this._removeBranch(view, branch);
+						});
+						view.appendChild(remove);
+						this._element.insertBefore(view, this._input);
+					}
+					_createFormInput(){
+						const input = ce("input");
+						input.placeholder = `创建${CHINESE_NUMBER[this._depth]}级表单`;
+						input.addEventListener("keyup", ({keyCode}) => {
+							if(input.value && keyCode === 13){
+								const index = this._leaves.length;
+								this._displayForms();
+								this._createForm({
+									index,
+									name: input.value,
+									container: this._element
+								});
+								this._hide(this._current);
+								input.value = "";
+							}
+						});
+						return input;
+					}
+					_removeBranch(view, branch){
+						this._element.removeChild(branch._element);
+						this._branches.remove(branch);
+						this._element.removeChild(view);
+					}
+					_createForm(options){
+						super._createLeaf(new Form(options));
+					}
+					_toggleHidden(){
+						this._element.classList.toggle("hidden");
+					}
+					_hide(previous){
+						previous && previous._element.classList.add("hidden");
+					}
+					_displayForms(){
+						this._leaves.forEach(leaf => leaf._display());
+					}
+					_hideForms(){
+						this._leaves.forEach(leaf => leaf._hide());
+					}
+				}
+				class Form extends Branch{
+					constructor({
+						container,
+						...options
+					}){
+						super(options);
+						this._renderIn(container);
+					}
+					_renderIn(container){
+						const element = this._element = ce("form");
+						element.style.left = `${this._depth * 200 + 200}px`;
+						element.appendChild(this._createHeader());
+						element.appendChild(this._createFieldCreator());
+						container.appendChild(element);
+					}
+					_createHeader(){
+						const header = ce("header");
+						header.textContent = this._name;
+						return header;
+					}
+					_createFieldCreator(){
+						const fieldCreator = new FieldCreator({
+							branch: this,
+							container: this._element
+						});
+						return fieldCreator._element;
+					}
+					_createField(options){
+						const field = new Field({
+							branch: this,
+							index: this._leaves.length,
+							depth: this._depth + 1,
+							...options
+						})
+						this._leaves.push(field);
+						this._element.insertBefore(field._element, this._element.lastElementChild);
+					}
+					_display(){
+						this._element.classList.remove("hidden");
+					}
+					_hide(){
+						this._element.classList.add("hidden");
+					}
+					_toggleHidden(){
+						this._element.classList.toggle("hidden");
+					}
+				}
+				class Leaf{
+					constructor({branch, index, name, depth}){
+						this._branch = branch;
+						this._index = index;
+						this._name = name;
+						this._depth = depth;
+					}
+					toJSON(){
+						return {
+							name: this._name
+						};
+					}
+				}
+				class Field extends Leaf{
+					constructor({
+						key,
+						type,
+						placeholder,
+						...options
+					}){
+						super(options);
+						this._key = key;
+						this._type = type;
+						this._placeholder = placeholder;
+						this._render();
+					}
+					_render(){
+						const view = this._element = ce("div");
+						view.className = "field-view";
+						const label = ce("label");
+						label.textContent = this._name;
+						view.appendChild(label);
+						const input = ce("input");
+						input.name = this._key;
+						input.placeholder = this._placeholder;
+						view.appendChild(input);
+					}
+					toJSON(){
+						return {
+							name: this._name,
+							key: this._key,
+							type: this._type,
+							placeholder: this._placeholder
+						};
+					}
+				}
+				class FieldCreator{
+					constructor({
+						branch,
+						container
+					}){
+						this._branch = branch;
+						this._container = container;
+						this._render();
+					}
+					_render(){
+						const fieldCreator = this._element = ce("div");
+						fieldCreator.className = "field-creator";
+						const fieldNameInput = this._fieldNameInput = ce("input");
+						fieldNameInput.placeholder = "字段名";
+						fieldCreator.appendChild(fieldNameInput);
+						const fieldKeyInput = this._fieldKeyInput = ce("input");
+						fieldKeyInput.placeholder = "字段id";
+						fieldCreator.appendChild(fieldKeyInput);
+						const fieldPlaceholderInput = this._fieldPlaceholderInput = ce("input");
+						fieldPlaceholderInput.placeholder = "输入提示";
+						fieldCreator.appendChild(fieldPlaceholderInput);
+						fieldCreator.appendChild(this._fieldTypeSelect = this._createFieldTypeSelect());
+						fieldCreator.appendChild(this._createValidatorButton());
+						fieldCreator.appendChild(this._createAddButton());
+					}
+					_createFieldTypeSelect(){
+						const fieldTypeSelect = ce("select");
+						["输入框", "单选", "联动", "单选+输入框", "联动+输入框"].forEach((name, index) => {
+							const option = ce("option");
+							option.textContent = name;
+							option.value = index;
+							fieldTypeSelect.appendChild(option);
+						});
+						return fieldTypeSelect;
+					}
+					_createValidatorButton(){
+						const button = ce("button");
+						button.type = "button";
+						button.textContent = "添加校验规则";
+						button.addEventListener("click", _ => {
+							// this._element.appendChild._createValidator()
+						});
+						return button;
+					}
+					// _createValidator(){
+					// 	const validator = new Validator({
+					// 		branch: this
+					// 	});
+					// 	return validator._element;
+					// }
+					_createAddButton(){
+						const button = ce("button");
+						button.type = "button";
+						button.textContent = "添加字段";
+						button.addEventListener("click", _ => {
+							this._branch._createField({
+								name: this._fieldNameInput.value,
+								key: this._fieldKeyInput.value,
+								type: this._fieldTypeSelect.value,
+								placeholder: this._fieldPlaceholderInput.value
+							});
+							this._fieldNameInput.value = this._fieldKeyInput.value = this._fieldPlaceholderInput.value = "";
+							this._fieldTypeSelect.value = 0;
+						});
+						return button;
+					}
+				}
+				return MenuCreator;
+			}();
+			const fmm = new FormManagementManager({
+				container: document.body,
+				name: "一级菜单"
+			});
+			btnExport.addEventListener("click", _ => console.log(fmm.toJSON()));
+		</script>
+	</body>
+</html>
