@@ -53,6 +53,19 @@
 				font-weight: 700;
 				line-height: 2;
 			}
+			.field-creator input.hidden{
+				display: none;
+			}
+			.field-view i{
+				opacity: 0;
+				cursor: pointer;
+			}
+			.field-view:hover i{
+				opacity: 1;
+			}
+			.field-view span{
+				color: red;
+			}
 		</style>
 	</head>
 	<body>
@@ -107,6 +120,15 @@
 					size(){
 						return this.length;
 					}
+					forEach(iteratee){
+						let current = {
+							_next: this._head
+						},
+							pointer = 0;
+						while(current = current._next){
+							iteratee(current._element, pointer++);
+						}
+					}
 					map(iteratee){
 						let current = {
 							_next: this._head
@@ -126,7 +148,7 @@
 						this._trunk = trunk;
 						this._name = name;
 						this._depth = depth;
-						this._leaves = [];
+						this._leaves = new LinkedList;
 					}
 					_createBranch(options){
 						const branch = new this.constructor({
@@ -233,10 +255,8 @@
 						input.placeholder = `创建${CHINESE_NUMBER[this._depth]}级表单`;
 						input.addEventListener("keyup", ({keyCode}) => {
 							if(input.value && keyCode === 13){
-								const index = this._leaves.length;
 								this._displayForms();
 								this._createForm({
-									index,
 									name: input.value,
 									container: this._element
 								});
@@ -297,10 +317,9 @@
 					_createField(options){
 						const field = new Field({
 							branch: this,
-							index: this._leaves.length,
 							depth: this._depth + 1,
 							...options
-						})
+						});
 						this._leaves.push(field);
 						this._element.insertBefore(field._element, this._element.lastElementChild);
 					}
@@ -313,11 +332,14 @@
 					_toggleHidden(){
 						this._element.classList.toggle("hidden");
 					}
+					_removeLeaf(element){
+						this._leaves.remove(element);
+						this._element.removeChild(element._element);
+					}
 				}
 				class Leaf{
-					constructor({branch, index, name, depth}){
+					constructor({branch, name, depth}){
 						this._branch = branch;
-						this._index = index;
 						this._name = name;
 						this._depth = depth;
 					}
@@ -332,12 +354,14 @@
 						key,
 						type,
 						placeholder,
+						rules,
 						...options
 					}){
 						super(options);
 						this._key = key;
 						this._type = type;
 						this._placeholder = placeholder;
+						this._rules = rules;
 						this._render();
 					}
 					_render(){
@@ -349,15 +373,103 @@
 						const input = ce("input");
 						input.name = this._key;
 						input.placeholder = this._placeholder;
+						const rules = this._rules;
+						const reminderText = ce("span");
+						input.addEventListener("input", _ => {
+							for(const {
+								validator,
+								reminder
+							} of rules){
+								if(!validator(input.value)){
+									return reminderText.textContent = reminder;
+								}
+							}
+							reminderText.textContent = "";
+						});
+						const remove = ce("i");
+						remove.textContent = "x";
+						remove.addEventListener("click", this._branch._removeLeaf.bind(this._branch, this));
 						view.appendChild(input);
+						view.appendChild(reminderText);
+						view.appendChild(remove);
 					}
 					toJSON(){
 						return {
 							name: this._name,
 							key: this._key,
 							type: this._type,
-							placeholder: this._placeholder
+							placeholder: this._placeholder,
+							rules: this._rules
 						};
+					}
+				}
+				class Validator{
+					constructor({
+						owner,
+						container
+					}){
+						this._owner = owner;
+						this._renderIn(container);
+					}
+					_renderIn(container){
+						const element = this._element = ce("div");
+						element.className = "field-validator";
+						element.appendChild(this._createSelector());
+						element.appendChild(this._createReminder());
+						element.appendChild(this._createButton());
+						container.appendChild(element);
+					}
+					_createSelector(){
+						const select = this._select = ce("select");
+						["必填", "满足正则", "小于", "大于", "不等于"].forEach((name, index) => {
+							const option = ce("option");
+							option.textContent = name;
+							option.value = index;
+							select.appendChild(option);
+						});
+						select.addEventListener("change", _ => {
+							if(select.value >> 1){
+								return this._input.placeholder = "具体的某个值";
+							}
+							if(+select.value){
+								return this._input.placeholder = "表达式";
+							}
+							this._input.classList.add("hidden");
+						});
+						return select;
+					}
+					get _input(){
+						if(!this.$input){
+							this._element.insertBefore(this.$input = ce("input"), this._button);
+						}
+						this.$input.classList.remove("hidden");
+						return this.$input;
+					}
+					_createReminder(){
+						const input = this._reminderInput = ce("input");
+						input.placeholder = "错误提示语";
+						return input;
+					}
+					_createButton(){
+						const button = this._button = ce("button");
+						button.type = "button";
+						button.textContent = "添加校验规则";
+						button.addEventListener("click", _ => {
+							const operationType = this._select.value,
+								isInNeed = !+operationType,
+								rule = isInNeed ? "" : this._input.value;
+							this._owner._addValidateRule({
+								validator: new Function((_ => operationType >> 1
+									? `return arguments[0] ${[,,"<", ">", "!=="][operationType]} +${rule};`
+									: `return ${new RegExp((rule || "^\\S+$").replace(/\\/g, "\\\\"))}.test(arguments[0]);`)()),
+								reminder: this._reminderInput.value
+							});
+							if(!isInNeed){
+								this._input.value = "";
+							}
+							this._reminderInput.value = "";
+						});
+						return button;
 					}
 				}
 				class FieldCreator{
@@ -367,6 +479,7 @@
 					}){
 						this._branch = branch;
 						this._container = container;
+						this._rules = [];
 						this._render();
 					}
 					_render(){
@@ -382,34 +495,29 @@
 						fieldPlaceholderInput.placeholder = "输入提示";
 						fieldCreator.appendChild(fieldPlaceholderInput);
 						fieldCreator.appendChild(this._fieldTypeSelect = this._createFieldTypeSelect());
-						fieldCreator.appendChild(this._createValidatorButton());
+						fieldCreator.appendChild(this._createValidator());
 						fieldCreator.appendChild(this._createAddButton());
 					}
 					_createFieldTypeSelect(){
-						const fieldTypeSelect = ce("select");
+						const select = ce("select");
 						["输入框", "单选", "联动", "单选+输入框", "联动+输入框"].forEach((name, index) => {
 							const option = ce("option");
 							option.textContent = name;
 							option.value = index;
-							fieldTypeSelect.appendChild(option);
+							select.appendChild(option);
 						});
-						return fieldTypeSelect;
+						return select;
 					}
-					_createValidatorButton(){
-						const button = ce("button");
-						button.type = "button";
-						button.textContent = "添加校验规则";
-						button.addEventListener("click", _ => {
-							// this._element.appendChild._createValidator()
+					_createValidator(){
+						const validator = new Validator({
+							owner: this,
+							container: this._element
 						});
-						return button;
+						return validator._element;
 					}
-					// _createValidator(){
-					// 	const validator = new Validator({
-					// 		branch: this
-					// 	});
-					// 	return validator._element;
-					// }
+					_addValidateRule(rule){
+						this._rules.push(rule);
+					}
 					_createAddButton(){
 						const button = ce("button");
 						button.type = "button";
@@ -419,10 +527,12 @@
 								name: this._fieldNameInput.value,
 								key: this._fieldKeyInput.value,
 								type: this._fieldTypeSelect.value,
-								placeholder: this._fieldPlaceholderInput.value
+								placeholder: this._fieldPlaceholderInput.value,
+								rules: this._rules
 							});
 							this._fieldNameInput.value = this._fieldKeyInput.value = this._fieldPlaceholderInput.value = "";
 							this._fieldTypeSelect.value = 0;
+							this._rules = [];
 						});
 						return button;
 					}
