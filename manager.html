@@ -1,55 +1,63 @@
 <html>
 	<head>
 		<style>
+			.branch-creator *, .branch-form *{
+				margin: 0;
+				padding: 0;
+				line-height: 1;
+			}
 			.branch-creator *{
 				font-family: "PingFangSC-Regular", "Open Sans", arial, x-locale-body, sans-serif;
 			}
+			.branch-creator i{
+				font-style: normal;
+				cursor: pointer;
+			}
+			.branch-creator i:hover{
+				color: red;
+			}
 			.branch-creator{
-				position: relative;
-				width: 200px;
+				margin: 10px 10px 0;
+				padding: 10px;
+				border: 1px solid;
 			}
 			.branch-creator.hidden{
 				display: none;
 			}
-			.branch-creator > header{
-				font-weight: 700;
+			.branch-creator:last-child{
+				margin: 10px;
 			}
-			.branch-creator a{
-				float: left;
+			.branch-creator header{
 				display: flex;
 				justify-content: space-between;
-				width: 100%;
-				line-height: 2;
+				font-weight: 700;
 			}
-			.branch-creator a > *{
-				cursor: pointer;
-			}
-			.branch-creator a i{
+			.branch-creator header i{
+				margin-right: 10px;
 				opacity: 0;
 			}
-			.branch-creator a:hover i{
+			.branch-creator header:hover i{
 				opacity: 1;
 			}
 			.branch-creator header::selection, .branch-creator a::selection{
 				background-color: transparent;
 			}
-			.branch-creator > input{
-				float: left;
-				width: 100%;
+			.branch-creator .branch-creator header{
+				font-size: 80%;
 			}
-			.branch-creator .branch-creator{
-				position: absolute;
-				left: 100%;
+			.branch-form{
+				margin: -1px 10px 0;
+				border: 1px solid;
 			}
-			.branch-creator form{
-				position: relative;
-				width: 600px;
-				overflow: hidden;
-			}
-			.branch-creator form.hidden{
+			.branch-form.hidden{
 				display: none;
 			}
-			.branch-creator form header{
+			.branch-form form{
+				margin: 10px;
+				padding: 10px;
+				border: 1px solid;
+			}
+			.branch-form form header{
 				font-weight: 700;
 				line-height: 2;
 			}
@@ -121,24 +129,28 @@
 						return this.length;
 					}
 					forEach(iteratee){
-						let current = {
-							_next: this._head
-						},
-							pointer = 0;
+						let pointer = 0,
+							current = {
+								_next: this._head
+							};
 						while(current = current._next){
 							iteratee(current._element, pointer++);
 						}
 					}
 					map(iteratee){
-						let current = {
-							_next: this._head
-						},
-							pointer = 0;
+						let pointer = 0,
+							current = {
+								_next: this._head
+							};
 						const result = [];
 						while(current = current._next){
 							result.push(iteratee(current._element, pointer++, result));
 						}
 						return result;
+					}
+					flush(){
+						delete this._head;
+						this.length = 0;
 					}
 				}
 				class Branch{
@@ -152,7 +164,7 @@
 					}
 					_createBranch(options){
 						const branch = new this.constructor({
-							truck: this,
+							trunk: this,
 							depth: this._depth + 1,
 							...options
 						});
@@ -184,30 +196,30 @@
 						...options
 					}){
 						super(options);
-						this._leaves = new Proxy(this._leaves, {
-							set: (target, key, value) => {
-								this._header.textContent = `${this._name}(含表单)`;
-								target[key] = value;
-								return true;
-							}
-						});
-						this._renderIn(container);
+						this._container = container;
+						this._render();
 					}
-					_renderIn(container){
+					_render(){
 						const element = this._element = ce("div");
 						element.className = "branch-creator";
 						element.appendChild(this._createHeader());
 						element.appendChild(this._createBranchInput());
 						element.appendChild(this._createFormInput());
-						container.appendChild(element);
+						this._container.appendChild(element);
 					}
 					_createHeader(){
 						const header = this._header = ce("header");
-						header.textContent = this._name;
-						header.addEventListener("click", _ => {
-							this._hide(this._current);
-							this._leaves.forEach(leaf => leaf._toggleHidden());
-						});
+						header.textContent = this._getTrunkChain();
+						if(this._trunk){
+							const remove = ce("i");
+							remove.textContent = "x";
+							remove.addEventListener("click", e => {
+								e.stopPropagation();
+								this._trunk._removeBranch(this);
+								this._removeForms();
+							});
+							header.appendChild(remove);
+						}
 						return header;
 					}
 					_createBranchInput(){
@@ -215,7 +227,7 @@
 						input.placeholder = `添加${CHINESE_NUMBER[this._depth]}级菜单`;
 						input.addEventListener("keyup", ({keyCode}) => {
 							if(input.value && keyCode === 13){
-								this._hideForms();
+								// this._hideForms();
 								this._createBranch({
 									name: input.value,
 									container: this._element
@@ -227,49 +239,47 @@
 					}
 					_createBranch(options){
 						const previous = this._current;
-						this._createView(this._current = super._createBranch(options));
-						this._hide(previous);
+						this._current = super._createBranch(options)
+						// this._hide(previous);
 					}
-					_createView(branch){
-						const view = ce("a");
-						view.textContent = branch._name;
-						view.addEventListener("click", _ => {
-							if(this._current !== branch){
-								this._hide(this._current);
-								this._current = branch;
-							}
-							branch._toggleHidden();
-							this._hideForms();
-						});
-						const remove = ce("i");
-						remove.textContent = "x";
-						remove.addEventListener("click", e => {
-							e.stopPropagation();
-							this._removeBranch(view, branch);
-						});
-						view.appendChild(remove);
-						this._element.insertBefore(view, this._input);
+					_getTrunkChain(branchName){
+						let current = this,
+							trunkChain = [current._name];
+						while(current = current._trunk){
+							trunkChain.unshift(current._name);
+						}
+						branchName && trunkChain.push(branchName);
+						return trunkChain.join(" > ");
 					}
 					_createFormInput(){
 						const input = ce("input");
 						input.placeholder = `创建${CHINESE_NUMBER[this._depth]}级表单`;
 						input.addEventListener("keyup", ({keyCode}) => {
 							if(input.value && keyCode === 13){
-								this._displayForms();
+								// this._displayForms();
 								this._createForm({
-									name: input.value,
-									container: this._element
+									trunk: this,
+									name: this._getTrunkChain(input.value),
+									container: this._formContainer
 								});
-								this._hide(this._current);
+								// this._hide(this._current);
 								input.value = "";
 							}
 						});
 						return input;
 					}
-					_removeBranch(view, branch){
-						this._element.removeChild(branch._element);
+					get _formContainer(){
+						if(!this.$formContainer){
+							const formContainer = this.$formContainer = ce("section");
+							formContainer.className = "branch-form";
+							this._element.insertAdjacentElement("afterend", formContainer);
+						}
+						return this.$formContainer;
+					}
+					_removeBranch(branch){
+						this._element.removeChild(branch.getElement());
 						this._branches.remove(branch);
-						this._element.removeChild(view);
+						this._leaves.flush();
 					}
 					_createForm(options){
 						super._createLeaf(new Form(options));
@@ -278,13 +288,31 @@
 						this._element.classList.toggle("hidden");
 					}
 					_hide(previous){
-						previous && previous._element.classList.add("hidden");
+						previous && previous.getElement().classList.add("hidden");
+					}
+					_removeForm(form){
+						this._leaves.remove(form);
+						if(this._leaves.size()){
+							return this._formContainer.removeChild(form.getElement());
+						}
+						this._container.removeChild(this._formContainer);
+						delete this.$formContainer;
 					}
 					_displayForms(){
-						this._leaves.forEach(leaf => leaf._display());
+						this._formContainer.classList.remove("hidden");
 					}
 					_hideForms(){
-						this._leaves.forEach(leaf => leaf._hide());
+						this._formContainer.classList.add("hidden");
+					}
+					_toggleHiddenForms(){
+						this._formContainer.classList.toggle("hidden");
+					}
+					_removeForms(){
+						this._container.removeChild(this._formContainer);
+						delete this.$formContainer;
+					}
+					getElement(){
+						return this._element;
 					}
 				}
 				class Form extends Branch{
@@ -297,7 +325,6 @@
 					}
 					_renderIn(container){
 						const element = this._element = ce("form");
-						element.style.left = `${this._depth * 200 + 200}px`;
 						element.appendChild(this._createHeader());
 						element.appendChild(this._createFieldCreator());
 						container.appendChild(element);
@@ -305,6 +332,10 @@
 					_createHeader(){
 						const header = ce("header");
 						header.textContent = this._name;
+						const remove = ce("i");
+						remove.textContent = "x";
+						remove.addEventListener("click", this._trunk._removeForm.bind(this._trunk, this));
+						header.appendChild(remove);
 						return header;
 					}
 					_createFieldCreator(){
@@ -312,7 +343,7 @@
 							branch: this,
 							container: this._element
 						});
-						return fieldCreator._element;
+						return fieldCreator.getElement();
 					}
 					_createField(options){
 						const field = new Field({
@@ -321,7 +352,7 @@
 							...options
 						});
 						this._leaves.push(field);
-						this._element.insertBefore(field._element, this._element.lastElementChild);
+						this._element.insertBefore(field.getElement(), this._element.lastElementChild);
 					}
 					_display(){
 						this._element.classList.remove("hidden");
@@ -335,6 +366,9 @@
 					_removeLeaf(element){
 						this._leaves.remove(element);
 						this._element.removeChild(element._element);
+					}
+					getElement(){
+						return this._element;
 					}
 				}
 				class Leaf{
@@ -392,6 +426,9 @@
 						view.appendChild(input);
 						view.appendChild(reminderText);
 						view.appendChild(remove);
+					}
+					getElement(){
+						return this._element;
 					}
 					toJSON(){
 						return {
@@ -471,6 +508,9 @@
 						});
 						return button;
 					}
+					getElement(){
+						return this._element;
+					}
 				}
 				class FieldCreator{
 					constructor({
@@ -513,7 +553,7 @@
 							owner: this,
 							container: this._element
 						});
-						return validator._element;
+						return validator.getElement();
 					}
 					_addValidateRule(rule){
 						this._rules.push(rule);
@@ -536,12 +576,15 @@
 						});
 						return button;
 					}
+					getElement(){
+						return this._element;
+					}
 				}
 				return MenuCreator;
 			}();
 			const fmm = new FormManagementManager({
 				container: document.body,
-				name: "一级菜单"
+				name: "迷之管理系统"
 			});
 			btnExport.addEventListener("click", _ => console.log(fmm.toJSON()));
 		</script>
