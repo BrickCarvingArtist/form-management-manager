@@ -5,32 +5,35 @@
 				margin: 0;
 				padding: 0;
 				line-height: 1;
-			}
-			.branch-creator *{
 				font-family: "PingFangSC-Regular", "Open Sans", arial, x-locale-body, sans-serif;
 			}
-			.branch-creator i{
+			.branch-creator i, .branch-form i{
 				font-style: normal;
 				cursor: pointer;
 			}
-			.branch-creator i:hover{
+			.branch-creator i:hover, .branch-form i:hover{
 				color: red;
 			}
 			.branch-creator{
 				margin: 10px 10px 0;
 				padding: 10px;
+				background-color: white;
 				border: 1px solid;
 			}
 			.branch-creator.hidden{
 				display: none;
 			}
+			.branch-creator.overhead{
+				background-color: #eeeeee;
+			}
 			.branch-creator:last-child{
 				margin: 10px;
 			}
-			.branch-creator header{
+			.branch-creator header, .branch-form header{
 				display: flex;
 				justify-content: space-between;
 				font-weight: 700;
+				line-height: 2;
 			}
 			.branch-creator header i{
 				margin-right: 10px;
@@ -46,7 +49,8 @@
 				font-size: 80%;
 			}
 			.branch-form{
-				margin: -1px 10px 0;
+				margin: 0 10px;
+				background-color: white;
 				border: 1px solid;
 			}
 			.branch-form.hidden{
@@ -56,10 +60,6 @@
 				margin: 10px;
 				padding: 10px;
 				border: 1px solid;
-			}
-			.branch-form form header{
-				font-weight: 700;
-				line-height: 2;
 			}
 			.field-creator input.hidden{
 				display: none;
@@ -77,6 +77,9 @@
 		</style>
 	</head>
 	<body>
+		<button type="button" id="btnSave">保存</button>
+		<input placeholder="配置" id="fmmDataInput" />
+		<button type="button" id="btnImport">导入</button>
 		<button type="button" id="btnExport">导出</button>
 		<script>
 			const FormManagementManager = function FormManagementManager(){
@@ -148,6 +151,26 @@
 						}
 						return result;
 					}
+					has(element){
+						let previous,
+							current = this._head;
+						while(current && current._element !== element){
+							previous = current;
+							current = current._next;
+						}
+						return !!current;
+					}
+					find(iteratee){
+						let pointer = 0,
+							current = {
+								_next: this._head
+							};
+						while(current = current._next){
+							if(iteratee(current._element, pointer++)){
+								return current._element;
+							}
+						}
+					}
 					flush(){
 						delete this._head;
 						this.length = 0;
@@ -205,7 +228,7 @@
 						element.appendChild(this._createHeader());
 						element.appendChild(this._createBranchInput());
 						element.appendChild(this._createFormInput());
-						this._container.appendChild(element);
+						this._container.appendChild(this._element);
 					}
 					_createHeader(){
 						const header = this._header = ce("header");
@@ -239,7 +262,7 @@
 					}
 					_createBranch(options){
 						const previous = this._current;
-						this._current = super._createBranch(options)
+						this._current = super._createBranch(options);
 						// this._hide(previous);
 					}
 					_getTrunkChain(branchName){
@@ -259,8 +282,7 @@
 								// this._displayForms();
 								this._createForm({
 									trunk: this,
-									name: this._getTrunkChain(input.value),
-									container: this._formContainer
+									name: this._getTrunkChain(input.value)
 								});
 								// this._hide(this._current);
 								input.value = "";
@@ -273,6 +295,12 @@
 							const formContainer = this.$formContainer = ce("section");
 							formContainer.className = "branch-form";
 							this._element.insertAdjacentElement("afterend", formContainer);
+							formContainer.animate({
+								transform: ["translateY(10px)", "translateY(-1px)"]
+							}, {
+								duration: 200,
+								fill: "forwards"
+							});
 						}
 						return this.$formContainer;
 					}
@@ -282,7 +310,9 @@
 						this._leaves.flush();
 					}
 					_createForm(options){
-						super._createLeaf(new Form(options));
+						const form = new Form(options);
+						super._createLeaf(form);
+						this._formContainer.appendChild(form.getElement());
 					}
 					_toggleHidden(){
 						this._element.classList.toggle("hidden");
@@ -311,23 +341,28 @@
 						this._container.removeChild(this._formContainer);
 						delete this.$formContainer;
 					}
+					init({name, branches, leaves}){
+						this._name = name;
+						branches.forEach(branch => {
+							console.log(branch)
+						});
+						leaves.forEach(_ => {});
+					}
 					getElement(){
 						return this._element;
 					}
 				}
 				class Form extends Branch{
-					constructor({
-						container,
-						...options
-					}){
+					constructor(options){
 						super(options);
-						this._renderIn(container);
 					}
-					_renderIn(container){
-						const element = this._element = ce("form");
-						element.appendChild(this._createHeader());
-						element.appendChild(this._createFieldCreator());
-						container.appendChild(element);
+					get _element(){
+						if(!this.$element){
+							const element = this.$element = ce("form");
+							element.appendChild(this._createHeader());
+							element.appendChild(this._createFieldCreator());
+						}
+						return this.$element;
 					}
 					_createHeader(){
 						const header = ce("header");
@@ -339,11 +374,7 @@
 						return header;
 					}
 					_createFieldCreator(){
-						const fieldCreator = new FieldCreator({
-							branch: this,
-							container: this._element
-						});
-						return fieldCreator.getElement();
+						return new FieldCreator(this).getElement();
 					}
 					_createField(options){
 						const field = new Field({
@@ -396,36 +427,38 @@
 						this._type = type;
 						this._placeholder = placeholder;
 						this._rules = rules;
-						this._render();
 					}
-					_render(){
-						const view = this._element = ce("div");
-						view.className = "field-view";
-						const label = ce("label");
-						label.textContent = this._name;
-						view.appendChild(label);
-						const input = ce("input");
-						input.name = this._key;
-						input.placeholder = this._placeholder;
-						const rules = this._rules;
-						const reminderText = ce("span");
-						input.addEventListener("input", _ => {
-							for(const {
-								validator,
-								reminder
-							} of rules){
-								if(!validator(input.value)){
-									return reminderText.textContent = reminder;
+					get _element(){
+						if(!this.$element){
+							const view = this.$element = ce("div");
+							view.className = "field-view";
+							const label = ce("label");
+							label.textContent = this._name;
+							view.appendChild(label);
+							const input = ce("input");
+							input.name = this._key;
+							input.placeholder = this._placeholder;
+							const rules = this._rules;
+							const reminderText = ce("span");
+							input.addEventListener("input", _ => {
+								for(const {
+									validator,
+									reminder
+								} of rules){
+									if(!validator(input.value)){
+										return reminderText.textContent = reminder;
+									}
 								}
-							}
-							reminderText.textContent = "";
-						});
-						const remove = ce("i");
-						remove.textContent = "x";
-						remove.addEventListener("click", this._branch._removeLeaf.bind(this._branch, this));
-						view.appendChild(input);
-						view.appendChild(reminderText);
-						view.appendChild(remove);
+								reminderText.textContent = "";
+							});
+							const remove = ce("i");
+							remove.textContent = "x";
+							remove.addEventListener("click", this._branch._removeLeaf.bind(this._branch, this));
+							view.appendChild(input);
+							view.appendChild(reminderText);
+							view.appendChild(remove);
+						}
+						return this.$element;
 					}
 					getElement(){
 						return this._element;
@@ -441,20 +474,18 @@
 					}
 				}
 				class Validator{
-					constructor({
-						owner,
-						container
-					}){
+					constructor(owner){
 						this._owner = owner;
-						this._renderIn(container);
 					}
-					_renderIn(container){
-						const element = this._element = ce("div");
-						element.className = "field-validator";
-						element.appendChild(this._createSelector());
-						element.appendChild(this._createReminder());
-						element.appendChild(this._createButton());
-						container.appendChild(element);
+					get _element(){
+						if(!this.$element){
+							const element = this.$element = ce("div");
+							element.className = "field-validator";
+							element.appendChild(this._createSelector());
+							element.appendChild(this._createReminder());
+							element.appendChild(this._createButton());
+						}
+						return this.$element;
 					}
 					_createSelector(){
 						const select = this._select = ce("select");
@@ -477,7 +508,7 @@
 					}
 					get _input(){
 						if(!this.$input){
-							this._element.insertBefore(this.$input = ce("input"), this._button);
+							this._element.insertBefore(this.$input = ce("input"), this._reminderInput);
 						}
 						this.$input.classList.remove("hidden");
 						return this.$input;
@@ -498,7 +529,7 @@
 							this._owner._addValidateRule({
 								validator: new Function((_ => operationType >> 1
 									? `return arguments[0] ${[,,"<", ">", "!=="][operationType]} +${rule};`
-									: `return ${new RegExp((rule || "^\\S+$").replace(/\\/g, "\\\\"))}.test(arguments[0]);`)()),
+									: `return ${rule ? new RegExp(rule.replace(/\\/g, "\\\\")) : /^\S+$/}.test(arguments[0]);`)()),
 								reminder: this._reminderInput.value
 							});
 							if(!isInNeed){
@@ -513,30 +544,37 @@
 					}
 				}
 				class FieldCreator{
-					constructor({
-						branch,
-						container
-					}){
+					constructor(branch){
 						this._branch = branch;
-						this._container = container;
 						this._rules = [];
-						this._render();
 					}
-					_render(){
-						const fieldCreator = this._element = ce("div");
-						fieldCreator.className = "field-creator";
-						const fieldNameInput = this._fieldNameInput = ce("input");
+					get _element(){
+						if(!this.$element){
+							const fieldCreator = this.$element = ce("div");
+							fieldCreator.className = "field-creator";
+							fieldCreator.appendChild(this._fieldNameInput = this._createFieldNameInput());
+							fieldCreator.appendChild(this._fieldKeyInput = this._createFieldKeyInput());
+							fieldCreator.appendChild(this._fieldPlaceholderInput = this._createFieldPlaceholderInput());
+							fieldCreator.appendChild(this._fieldTypeSelect = this._createFieldTypeSelect());
+							fieldCreator.appendChild(this._createValidator());
+							fieldCreator.appendChild(this._createAddButton());
+						}
+						return this.$element;
+					}
+					_createFieldNameInput(){
+						const fieldNameInput = ce("input");
 						fieldNameInput.placeholder = "字段名";
-						fieldCreator.appendChild(fieldNameInput);
-						const fieldKeyInput = this._fieldKeyInput = ce("input");
+						return fieldNameInput;
+					}
+					_createFieldKeyInput(){
+						const fieldKeyInput = ce("input");
 						fieldKeyInput.placeholder = "字段id";
-						fieldCreator.appendChild(fieldKeyInput);
-						const fieldPlaceholderInput = this._fieldPlaceholderInput = ce("input");
+						return fieldKeyInput;
+					}
+					_createFieldPlaceholderInput(){
+						const fieldPlaceholderInput = ce("input");
 						fieldPlaceholderInput.placeholder = "输入提示";
-						fieldCreator.appendChild(fieldPlaceholderInput);
-						fieldCreator.appendChild(this._fieldTypeSelect = this._createFieldTypeSelect());
-						fieldCreator.appendChild(this._createValidator());
-						fieldCreator.appendChild(this._createAddButton());
+						return fieldPlaceholderInput;
 					}
 					_createFieldTypeSelect(){
 						const select = ce("select");
@@ -549,11 +587,7 @@
 						return select;
 					}
 					_createValidator(){
-						const validator = new Validator({
-							owner: this,
-							container: this._element
-						});
-						return validator.getElement();
+						return new Validator(this).getElement();
 					}
 					_addValidateRule(rule){
 						this._rules.push(rule);
@@ -586,7 +620,13 @@
 				container: document.body,
 				name: "迷之管理系统"
 			});
-			btnExport.addEventListener("click", _ => console.log(fmm.toJSON()));
+			btnSave.addEventListener("click", _ => {
+				localStorage.setItem("fmm_data", fmm.toJSON());
+			});
+			btnExport.addEventListener("click", _ => console.log(fmm.toJSON(), JSON.stringify(fmm.toJSON())));
+			btnImport.addEventListener("click", _ => {
+				fmm.init(JSON.parse(fmmDataInput.value));
+			});
 		</script>
 	</body>
 </html>
